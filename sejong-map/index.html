@@ -1,320 +1,187 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>세종 3D 맵</title>
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<style>
-  :root {
-    --panel: rgba(16, 22, 34, 0.86);
-    --line: rgba(255, 255, 255, 0.12);
-    --text: #e8edf5;
-    --muted: #93a0b5;
-    --accent: #5fd0c5;
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; background: #0b1018; color: var(--text);
-    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; }
-  #map { position: absolute; inset: 0; }
-
-  #panel {
-    position: absolute; top: 12px; left: 12px; z-index: 2;
-    width: 248px; max-height: calc(100% - 24px); overflow: auto;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-    backdrop-filter: blur(8px); padding: 14px;
-  }
-  #panel h1 { font-size: 16px; margin: 0 0 2px; letter-spacing: -0.01em; }
-  #panel .sub { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
-  #panel h2 { font-size: 11px; font-weight: 600; color: var(--muted); margin: 14px 0 6px;
-    text-transform: uppercase; letter-spacing: 0.06em; }
-  .row { display: flex; align-items: center; justify-content: space-between;
-    font-size: 13px; padding: 5px 0; cursor: pointer; }
-  .row input { accent-color: var(--accent); width: 16px; height: 16px; }
-  .places { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  button {
-    font: inherit; font-size: 12px; color: var(--text); background: rgba(255, 255, 255, 0.06);
-    border: 1px solid var(--line); border-radius: 8px; padding: 7px 6px; cursor: pointer;
-  }
-  button:hover { background: rgba(95, 208, 197, 0.18); border-color: var(--accent); }
-  button.wide { grid-column: 1 / -1; }
-  #status { font-size: 11px; color: var(--muted); margin-top: 12px; line-height: 1.5; }
-  #status.err { color: #ffb38a; }
-  #toggle { display: none; }
-
-  @media (max-width: 640px) {
-    #panel { width: auto; right: 12px; max-height: 46%; }
-    #panel.closed > :not(h1):not(#toggle) { display: none; }
-    #toggle { display: block; position: absolute; top: 9px; right: 10px; padding: 4px 9px; }
-  }
-</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="세종특별자치시 전역을 OpenStreetMap 데이터로 보여 주는 3D 지도">
+<meta name="theme-color" content="#0e141e">
+<title>세종 3D 지도</title>
+<!-- MapLibre GL JS: 버전 고정 (5.x 는 일반 <script> 로 불러올 수 있는 UMD 빌드를 제공) -->
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-<div id="map"></div>
+<a class="skip" href="#panel">설정 패널로 건너뛰기</a>
+<div id="map" role="region" aria-label="세종특별자치시 3D 지도. 화살표 키로 이동, +/- 로 확대·축소"></div>
 
-<div id="panel">
-  <button id="toggle" type="button">접기</button>
-  <h1>세종 3D 맵</h1>
-  <p class="sub">세종특별자치시 전역 · 실시간 타일 스트리밍</p>
-
-  <h2>레이어</h2>
-  <label class="row">3D 건물 <input type="checkbox" id="chk-buildings" checked></label>
-  <label class="row">지형 고도 <input type="checkbox" id="chk-terrain"></label>
-  <label class="row">지명 표시 <input type="checkbox" id="chk-labels" checked></label>
-  <label class="row">시 경계 <input type="checkbox" id="chk-boundary" checked></label>
-
-  <h2>바로 가기</h2>
-  <div class="places" id="places"></div>
-
-  <div id="status">지도를 불러오는 중…</div>
+<div id="loading" class="loading" role="status" aria-live="polite">
+  <div class="spinner" aria-hidden="true"></div>
+  <p id="loading-text">지도를 불러오는 중…</p>
 </div>
 
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script>
-(() => {
-  // 세종특별자치시를 넉넉히 감싸는 범위 [서, 남, 동, 북]
-  const SEJONG_BOUNDS = [[127.02, 36.39], [127.43, 36.75]];
-  const CENTER = [127.265, 36.5];
+<aside id="panel" class="panel" aria-label="지도 설정">
+  <header class="panel-head">
+    <div>
+      <h1>세종 3D 지도</h1>
+      <p class="sub">세종특별자치시 · OSM 실시간 타일</p>
+    </div>
+    <div class="head-btns">
+      <button type="button" id="btn-theme" class="icon-btn" aria-label="테마 전환 (D)" title="테마 전환 (D)"></button>
+      <button type="button" id="btn-help" class="icon-btn" aria-label="단축키 도움말 (?)" title="단축키 도움말 (?)">?</button>
+      <button type="button" id="btn-collapse" class="icon-btn collapse-btn" aria-expanded="true" aria-controls="panel-body" aria-label="패널 접기"></button>
+    </div>
+  </header>
 
-  // 좌표는 대략적인 위치입니다 (줌 15~16에서 주변이 보이는 수준).
-  const PLACES = [
-    { name: '정부세종청사', center: [127.265, 36.5045], zoom: 15.6, bearing: -20 },
-    { name: '세종호수공원', center: [127.2725, 36.4985], zoom: 15.2, bearing: 30 },
-    { name: '세종시청', center: [127.289, 36.4801], zoom: 16, bearing: 10 },
-    { name: '금강보행교', center: [127.2855, 36.4765], zoom: 15.6, bearing: 150 },
-    { name: '국립세종수목원', center: [127.2805, 36.4975], zoom: 15.4, bearing: -40 },
-    { name: '조치원역', center: [127.2965, 36.601], zoom: 15.6, bearing: 0 },
-  ];
+  <div id="panel-body" class="panel-body">
+    <form id="search-form" class="search" role="search" autocomplete="off">
+      <label for="search-input" class="sr-only">세종시 안에서 장소 검색</label>
+      <input id="search-input" type="search" placeholder="장소 검색 (예: 세종시청)" enterkeyhint="search" maxlength="80">
+      <button type="submit" id="search-btn">검색</button>
+    </form>
+    <ul id="search-results" class="results" aria-label="검색 결과" hidden></ul>
 
-  const statusEl = document.getElementById('status');
-  const setStatus = (msg, isError) => {
-    statusEl.textContent = msg;
-    statusEl.classList.toggle('err', !!isError);
-  };
+    <section class="sec" aria-labelledby="h-go">
+      <h2 id="h-go">바로 가기</h2>
+      <div class="btn-row">
+        <button type="button" id="btn-home" class="primary">세종시 전체 보기 <kbd>C</kbd></button>
+      </div>
+      <div class="places" id="places"></div>
+      <div class="btn-row two">
+        <button type="button" id="btn-tour" aria-pressed="false">투어 시작 <kbd>P</kbd></button>
+        <button type="button" id="btn-orbit" aria-pressed="false">자동 회전 <kbd>R</kbd></button>
+      </div>
+    </section>
 
-  if (!window.maplibregl) {
-    setStatus('지도 라이브러리를 불러오지 못했습니다. 네트워크 연결을 확인하세요.', true);
-    return;
-  }
+    <details class="sec" open>
+      <summary><h2>건물</h2></summary>
+      <div class="seg" role="radiogroup" aria-label="건물 표시 방식">
+        <label><input type="radio" name="bmode" value="3d"> 3D</label>
+        <label><input type="radio" name="bmode" value="flat"> 평면</label>
+        <label><input type="radio" name="bmode" value="off"> 끄기</label>
+      </div>
+      <div class="seg" role="radiogroup" aria-label="건물 색상">
+        <label><input type="radio" name="bcolor" value="height"> 높이별</label>
+        <label><input type="radio" name="bcolor" value="osm"> OSM 색</label>
+        <label><input type="radio" name="bcolor" value="solid"> 단색</label>
+      </div>
+      <div class="legend" id="legend" aria-label="건물 높이 범례">
+        <div class="legend-bar" id="legend-bar"></div>
+        <div class="legend-ticks" id="legend-ticks"></div>
+        <p class="hint">건물은 줌 13 이상에서 표시됩니다. 높이는 OSM 의 height·building:levels 값을 기반으로 합니다.</p>
+      </div>
+    </details>
 
-  const name = ['coalesce', ['get', 'name:ko'], ['get', 'name']];
-  const FONT = ['Noto Sans Regular'];
-  const height = ['coalesce', ['get', 'render_height'], 6];
+    <details class="sec" open>
+      <summary><h2>레이어</h2></summary>
+      <label class="row"><span>지명·라벨 <kbd>L</kbd></span><input type="checkbox" id="chk-labels"></label>
+      <label class="row"><span>관심 지점(POI) 아이콘</span><input type="checkbox" id="chk-poi"></label>
+      <label class="row"><span>영문 이름 병기</span><input type="checkbox" id="chk-latin"></label>
+      <label class="row"><span>건물 번호(번지) · 줌 17+</span><input type="checkbox" id="chk-housenumbers"></label>
+      <label class="row"><span>시 경계 · 바깥 어둡게</span><input type="checkbox" id="chk-boundary"></label>
+      <label class="row"><span>행정 경계선 (타일)</span><input type="checkbox" id="chk-admin"></label>
+    </details>
 
-  const roadWidth = (base) => ['interpolate', ['exponential', 1.6], ['zoom'],
-    8, base * 0.25, 12, base * 0.6, 14, base * 1.6, 16, base * 5, 18, base * 16];
+    <details class="sec" open>
+      <summary><h2>지형</h2></summary>
+      <label class="row"><span>지형 음영</span><input type="checkbox" id="chk-hillshade"></label>
+      <label class="row"><span>고도 색상</span><input type="checkbox" id="chk-relief"></label>
+      <label class="row"><span>3D 지형 <kbd>T</kbd></span><input type="checkbox" id="chk-terrain"></label>
+      <div class="slider">
+        <label for="rng-exag">지형 과장 <output id="out-exag">1.5×</output></label>
+        <input type="range" id="rng-exag" min="1" max="3" step="0.1">
+      </div>
+    </details>
 
-  const style = {
-    version: 8,
-    glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
-    sources: {
-      omt: {
-        type: 'vector',
-        url: 'https://tiles.openfreemap.org/planet',
-        attribution: '<a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> ' +
-          '<a href="https://www.openmaptiles.org/" target="_blank">© OpenMapTiles</a> ' +
-          'Data from <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
-      },
-    },
-    layers: [
-      { id: 'bg', type: 'background', paint: { 'background-color': '#111823' } },
-      { id: 'landcover-green', type: 'fill', source: 'omt', 'source-layer': 'landcover',
-        filter: ['in', ['get', 'class'], ['literal', ['wood', 'grass', 'farmland', 'wetland']]],
-        paint: { 'fill-color': ['match', ['get', 'class'],
-          'wood', '#16301f', 'grass', '#1b3423', 'wetland', '#17303a', '#1b2a22'], 'fill-opacity': 0.9 } },
-      { id: 'landuse', type: 'fill', source: 'omt', 'source-layer': 'landuse',
-        paint: { 'fill-color': ['match', ['get', 'class'],
-          'residential', '#161f2c', 'industrial', '#1c2030', 'commercial', '#1b2231',
-          'school', '#1c2733', 'university', '#1c2733', 'hospital', '#24212e', '#151d29'], 'fill-opacity': 0.8 } },
-      { id: 'park', type: 'fill', source: 'omt', 'source-layer': 'park',
-        paint: { 'fill-color': '#1d3d29', 'fill-opacity': 0.75 } },
-      { id: 'water', type: 'fill', source: 'omt', 'source-layer': 'water',
-        paint: { 'fill-color': '#1d4a6b' } },
-      { id: 'waterway', type: 'line', source: 'omt', 'source-layer': 'waterway',
-        paint: { 'line-color': '#1d4a6b',
-          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 0.6, 16, 4] } },
+    <details class="sec" open>
+      <summary><h2>시간·조명</h2></summary>
+      <div class="slider">
+        <label for="rng-time">시각 <output id="out-time">12:00</output></label>
+        <input type="range" id="rng-time" min="0" max="1435" step="5">
+        <p class="hint" id="sun-info">태양 고도 –</p>
+      </div>
+      <div class="btn-row two">
+        <button type="button" id="btn-now">현재 시각</button>
+        <button type="button" id="btn-daycycle" aria-pressed="false">하루 재생</button>
+      </div>
+    </details>
 
-      { id: 'road-path', type: 'line', source: 'omt', 'source-layer': 'transportation', minzoom: 14,
-        filter: ['in', ['get', 'class'], ['literal', ['path', 'track']]],
-        paint: { 'line-color': '#3a4658', 'line-width': 1, 'line-dasharray': [2, 2] } },
-      { id: 'road-minor', type: 'line', source: 'omt', 'source-layer': 'transportation', minzoom: 12,
-        filter: ['in', ['get', 'class'], ['literal', ['minor', 'service']]],
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': '#34404f', 'line-width': roadWidth(0.7) } },
-      { id: 'road-mid', type: 'line', source: 'omt', 'source-layer': 'transportation',
-        filter: ['in', ['get', 'class'], ['literal', ['secondary', 'tertiary']]],
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': '#4b596d', 'line-width': roadWidth(1) } },
-      { id: 'road-major', type: 'line', source: 'omt', 'source-layer': 'transportation',
-        filter: ['in', ['get', 'class'], ['literal', ['primary', 'trunk']]],
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': '#7c8ba3', 'line-width': roadWidth(1.3) } },
-      { id: 'road-motorway', type: 'line', source: 'omt', 'source-layer': 'transportation',
-        filter: ['==', ['get', 'class'], 'motorway'],
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': '#d9a35c', 'line-width': roadWidth(1.5) } },
-      { id: 'rail', type: 'line', source: 'omt', 'source-layer': 'transportation',
-        filter: ['==', ['get', 'class'], 'rail'],
-        paint: { 'line-color': '#a184c9', 'line-width': 1.4, 'line-dasharray': [4, 2] } },
+    <details class="sec" id="sec-ov">
+      <summary><h2>OSM 추가 데이터</h2></summary>
+      <p class="hint">켜면 Overpass API 에서 현재 화면 범위만 받아옵니다. 확대할수록 빠릅니다.</p>
+      <div id="ov-list"></div>
+    </details>
 
-      { id: 'building-flat', type: 'fill', source: 'omt', 'source-layer': 'building', minzoom: 13,
-        layout: { visibility: 'none' },
-        paint: { 'fill-color': '#34435a', 'fill-outline-color': '#4a5b76' } },
-      { id: 'building-3d', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building', minzoom: 13,
-        paint: {
-          'fill-extrusion-color': ['interpolate', ['linear'], height,
-            0, '#3b4a61', 15, '#52688a', 40, '#6f93b8', 80, '#8fc3cf', 150, '#c9eee4'],
-          'fill-extrusion-height': height,
-          'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-          'fill-extrusion-opacity': 0.92,
-        } },
+    <details class="sec" id="sec-tools" open>
+      <summary><h2>도구</h2></summary>
+      <div class="btn-row two">
+        <button type="button" id="btn-measure" aria-pressed="false">거리 측정 <kbd>M</kbd></button>
+        <button type="button" id="btn-measure-clear">측정 지우기</button>
+      </div>
+      <div id="measure-box" class="measure" hidden>
+        <p id="measure-text" aria-live="polite">지도를 클릭해 지점을 추가하세요. 더블클릭 또는 Enter 로 끝냅니다.</p>
+        <div class="btn-row two">
+          <button type="button" id="btn-measure-undo">마지막 지점 취소</button>
+          <button type="button" id="btn-measure-close" aria-pressed="false">다각형 닫기(면적)</button>
+        </div>
+        <svg id="profile" class="profile" viewBox="0 0 240 70" preserveAspectRatio="none" role="img" aria-label="고도 단면" hidden></svg>
+        <p id="profile-text" class="hint" hidden></p>
+      </div>
+      <div class="btn-row two">
+        <button type="button" id="btn-share">링크 복사 <kbd>U</kbd></button>
+        <button type="button" id="btn-shot">화면 저장 <kbd>S</kbd></button>
+      </div>
+    </details>
 
-      { id: 'label-road', type: 'symbol', source: 'omt', 'source-layer': 'transportation_name', minzoom: 14,
-        layout: { 'symbol-placement': 'line', 'text-field': name, 'text-font': FONT, 'text-size': 11 },
-        paint: { 'text-color': '#aab6c8', 'text-halo-color': '#111823', 'text-halo-width': 1.4 } },
-      { id: 'label-poi', type: 'symbol', source: 'omt', 'source-layer': 'poi', minzoom: 15,
-        filter: ['<=', ['coalesce', ['get', 'rank'], 99], 12],
-        layout: { 'text-field': name, 'text-font': FONT, 'text-size': 11, 'text-max-width': 8 },
-        paint: { 'text-color': '#c8d3e2', 'text-halo-color': '#111823', 'text-halo-width': 1.4 } },
-      { id: 'label-place', type: 'symbol', source: 'omt', 'source-layer': 'place',
-        layout: {
-          'text-field': name, 'text-font': FONT, 'text-max-width': 8,
-          'text-size': ['match', ['get', 'class'], 'city', 17, 'town', 15, 'suburb', 13, 12],
-        },
-        paint: { 'text-color': '#f0f4fa', 'text-halo-color': '#111823', 'text-halo-width': 1.6 } },
-    ],
-  };
+    <p id="status" class="status" role="status" aria-live="polite">지도를 불러오는 중…</p>
+  </div>
+</aside>
 
-  const LABEL_LAYERS = ['label-road', 'label-poi', 'label-place'];
-  const BOUNDARY_LAYERS = ['sejong-mask', 'sejong-outline'];
+<div id="readout" class="readout" aria-live="off">
+  <button type="button" id="readout-coord" title="클릭하면 좌표를 복사합니다">–</button>
+  <span id="readout-view">–</span>
+</div>
+<div id="caption" class="caption" aria-live="polite" hidden></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  const map = new maplibregl.Map({
-    container: 'map',
-    style,
-    center: CENTER,
-    zoom: 11,
-    pitch: 55,
-    bearing: -15,
-    maxPitch: 80,
-    minZoom: 9,
-    maxBounds: [[126.6, 36.1], [127.85, 37.05]],
-    hash: true,
-  });
-  window.sejongMap = map;
+<dialog id="help" class="help" aria-labelledby="help-title">
+  <h2 id="help-title">단축키</h2>
+  <table>
+    <tbody>
+      <tr><td><kbd>/</kbd></td><td>장소 검색</td></tr>
+      <tr><td><kbd>C</kbd></td><td>세종시 전체 보기</td></tr>
+      <tr><td><kbd>1</kbd>–<kbd>9</kbd></td><td>바로 가기 1–9번</td></tr>
+      <tr><td><kbd>B</kbd></td><td>건물 3D / 평면 / 끄기 전환</td></tr>
+      <tr><td><kbd>T</kbd></td><td>3D 지형 켜기/끄기</td></tr>
+      <tr><td><kbd>L</kbd></td><td>라벨 켜기/끄기</td></tr>
+      <tr><td><kbd>D</kbd></td><td>다크/라이트 테마</td></tr>
+      <tr><td><kbd>M</kbd></td><td>거리 측정 시작/끝</td></tr>
+      <tr><td><kbd>R</kbd></td><td>자동 회전</td></tr>
+      <tr><td><kbd>P</kbd></td><td>시네마틱 투어</td></tr>
+      <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>시각 −/+ 30분</td></tr>
+      <tr><td><kbd>N</kbd></td><td>북쪽 위로 · 기울기 초기화</td></tr>
+      <tr><td><kbd>S</kbd></td><td>화면 저장(PNG)</td></tr>
+      <tr><td><kbd>U</kbd></td><td>현재 화면 링크 복사</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>측정·투어·회전 중지, 팝업 닫기</td></tr>
+      <tr><td>←↑→↓ · <kbd>+</kbd><kbd>−</kbd></td><td>지도 이동 · 확대/축소 (지도에 포커스)</td></tr>
+      <tr><td><kbd>Shift</kbd>+←→↑↓</td><td>회전 · 기울이기</td></tr>
+      <tr><td>마우스 우클릭 드래그</td><td>회전·기울이기 (모바일: 두 손가락)</td></tr>
+    </tbody>
+  </table>
+  <form method="dialog"><button type="submit" class="primary" autofocus>닫기</button></form>
+</dialog>
 
-  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
-  map.addControl(new maplibregl.FullscreenControl(), 'top-right');
-  map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
+<noscript><p class="noscript">이 지도는 JavaScript 가 필요합니다.</p></noscript>
 
-  const setVisible = (ids, on) => ids.forEach((id) => {
-    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
-  });
-
-  // --- 시 경계: OSM 행정구역 폴리곤을 실행 시점에 받아와 바깥을 어둡게 가립니다.
-  async function loadBoundary() {
-    const url = 'https://nominatim.openstreetmap.org/search?format=geojson&polygon_geojson=1' +
-      '&polygon_threshold=0.0003&limit=5&countrycodes=kr&q=' + encodeURIComponent('세종특별자치시');
-    const res = await fetch(url, { headers: { 'Accept-Language': 'ko' } });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const fc = await res.json();
-    const feature = (fc.features || []).find((f) =>
-      f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon'));
-    if (!feature) throw new Error('경계 폴리곤 없음');
-
-    const polys = feature.geometry.type === 'Polygon'
-      ? [feature.geometry.coordinates] : feature.geometry.coordinates;
-    const world = [[120, 30], [135, 30], [135, 45], [120, 45], [120, 30]];
-    const mask = { type: 'Feature', properties: {},
-      geometry: { type: 'Polygon', coordinates: [world, ...polys.map((p) => p[0])] } };
-
-    map.addSource('sejong', { type: 'geojson', data: feature });
-    map.addSource('sejong-mask', { type: 'geojson', data: mask });
-    map.addLayer({ id: 'sejong-mask', type: 'fill', source: 'sejong-mask',
-      paint: { 'fill-color': '#06090e', 'fill-opacity': 0.55 } }, 'building-flat');
-    map.addLayer({ id: 'sejong-outline', type: 'line', source: 'sejong',
-      paint: { 'line-color': '#5fd0c5', 'line-width': 2, 'line-opacity': 0.9 } }, 'label-road');
-    setVisible(BOUNDARY_LAYERS, document.getElementById('chk-boundary').checked);
-
-    let w = 180, s = 90, e = -180, n = -90;
-    polys.forEach((p) => p[0].forEach(([x, y]) => {
-      w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y);
-    }));
-    return [[w, s], [e, n]];
-  }
-
-  let fullBounds = SEJONG_BOUNDS;
-  const flyToAll = () => map.fitBounds(fullBounds, { padding: 40, pitch: 45, bearing: -15, duration: 1800 });
-
-  map.on('load', async () => {
-    if (!tileErrorShown) setStatus('건물은 줌 13부터 표시됩니다. 우클릭 드래그(모바일: 두 손가락)로 기울이고 회전하세요.');
-    if (!location.hash) map.fitBounds(SEJONG_BOUNDS, { padding: 40, pitch: 45, bearing: -15, duration: 0 });
-    try {
-      fullBounds = await loadBoundary();
-      if (!location.hash) flyToAll();
-    } catch (err) {
-      console.warn('세종시 경계 로드 실패:', err);
-      document.getElementById('chk-boundary').disabled = true;
-    }
-  });
-
-  let tileErrorShown = false;
-  map.on('error', (e) => {
-    console.warn(e && e.error);
-    if (tileErrorShown) return;
-    tileErrorShown = true;
-    setStatus('일부 지도 데이터를 불러오지 못했습니다. 네트워크 상태를 확인한 뒤 새로고침하세요.', true);
-  });
-
-  // --- 레이어 토글
-  document.getElementById('chk-buildings').addEventListener('change', (e) => {
-    setVisible(['building-3d'], e.target.checked);
-    setVisible(['building-flat'], !e.target.checked);
-  });
-  document.getElementById('chk-labels').addEventListener('change', (e) => setVisible(LABEL_LAYERS, e.target.checked));
-  document.getElementById('chk-boundary').addEventListener('change', (e) => setVisible(BOUNDARY_LAYERS, e.target.checked));
-
-  document.getElementById('chk-terrain').addEventListener('change', (e) => {
-    if (e.target.checked) {
-      if (!map.getSource('dem')) {
-        const dem = {
-          type: 'raster-dem',
-          tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
-          encoding: 'terrarium', tileSize: 256, maxzoom: 14,
-          attribution: 'Terrain: <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank">Mapzen/Tilezen</a>',
-        };
-        map.addSource('dem', dem);
-        map.addSource('dem-shade', dem);
-        map.addLayer({ id: 'hillshade', type: 'hillshade', source: 'dem-shade',
-          paint: { 'hillshade-exaggeration': 0.45, 'hillshade-shadow-color': '#05080d',
-            'hillshade-highlight-color': '#5b6f8c', 'hillshade-accent-color': '#0c121b' } }, 'water');
-      }
-      setVisible(['hillshade'], true);
-      map.setTerrain({ source: 'dem', exaggeration: 1.5 });
-    } else {
-      map.setTerrain(null);
-      setVisible(['hillshade'], false);
-    }
-  });
-
-  // --- 바로 가기
-  const placesEl = document.getElementById('places');
-  const addButton = (label, onClick, wide) => {
-    const b = document.createElement('button');
-    b.type = 'button'; b.textContent = label;
-    if (wide) b.className = 'wide';
-    b.addEventListener('click', onClick);
-    placesEl.appendChild(b);
-  };
-  addButton('세종시 전체 보기', flyToAll, true);
-  PLACES.forEach((p) => addButton(p.name, () =>
-    map.flyTo({ center: p.center, zoom: p.zoom, pitch: 62, bearing: p.bearing, duration: 2600, essential: true })));
-
-  const panel = document.getElementById('panel');
-  const toggle = document.getElementById('toggle');
-  toggle.addEventListener('click', () => {
-    toggle.textContent = panel.classList.toggle('closed') ? '펼치기' : '접기';
-  });
-})();
-</script>
+<script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
+<script src="js/config.js"></script>
+<script src="js/themes.js"></script>
+<script src="js/core.js"></script>
+<script src="js/lighting.js"></script>
+<script src="js/style.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/places.js"></script>
+<script src="js/overpass.js"></script>
+<script src="js/tools.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>
