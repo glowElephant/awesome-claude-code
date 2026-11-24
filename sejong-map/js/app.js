@@ -39,9 +39,11 @@
     labels: true, poi: true, latin: false, housenumbers: true,
     boundary: true, adminLines: true,
     hillshade: true, relief: false, terrain: false, exaggeration: 1.5,
+    places: true, bldDetail: true, facade: true, detailCover: null,
     timeMin: null,
   }, SJ.store.get('sj.settings.v1', {}));
   S.timeMin = SJ.lighting.nowMinutes();
+  S.detailCover = null;
   var ovFromHash = [];
 
   function readHash() {
@@ -52,7 +54,10 @@
       switch (k) {
         case 'th': if (SJ.themes[v]) S.theme = v; break;
         case 'bd': if (/^(3d|flat|off)$/.test(v)) S.buildings = v; break;
-        case 'bc': if (/^(height|osm|solid)$/.test(v)) S.colorMode = v; break;
+        case 'bc': if (/^(height|osm|solid|use)$/.test(v)) S.colorMode = v; break;
+        case 'pl': S.places = v === '1'; break;
+        case 'bdt': S.bldDetail = v === '1'; break;
+        case 'fc': S.facade = v === '1'; break;
         case 'tr': S.terrain = v === '1'; break;
         case 'ex': var x = parseFloat(v); if (x >= 1 && x <= 3) S.exaggeration = x; break;
         case 'hs': S.hillshade = v === '1'; break;
@@ -68,7 +73,7 @@
 
   function saveState() {
     var keep = {};
-    ['theme', 'buildings', 'colorMode', 'labels', 'poi', 'latin', 'housenumbers', 'boundary', 'adminLines', 'hillshade', 'relief', 'terrain', 'exaggeration']
+    ['theme', 'buildings', 'colorMode', 'labels', 'poi', 'latin', 'housenumbers', 'boundary', 'adminLines', 'hillshade', 'relief', 'terrain', 'exaggeration', 'places', 'bldDetail', 'facade']
       .forEach(function (k) { keep[k] = S[k]; });
     SJ.store.set('sj.settings.v1', keep);
     writeHash();
@@ -77,7 +82,8 @@
     var parts = location.hash.replace(/^#/, '').split('&').filter(function (p) { return /^map=/.test(p); });
     var ov = Object.keys(SJ.overpass.defs).filter(SJ.overpass.isEnabled);
     parts.push('th=' + S.theme, 'bd=' + S.buildings, 'bc=' + S.colorMode, 'tr=' + (S.terrain ? 1 : 0),
-      'ex=' + S.exaggeration, 'hs=' + (S.hillshade ? 1 : 0), 'rf=' + (S.relief ? 1 : 0), 'lb=' + (S.labels ? 1 : 0), 'tm=' + S.timeMin);
+      'ex=' + S.exaggeration, 'hs=' + (S.hillshade ? 1 : 0), 'rf=' + (S.relief ? 1 : 0), 'lb=' + (S.labels ? 1 : 0), 'tm=' + S.timeMin,
+      'pl=' + (S.places ? 1 : 0), 'bdt=' + (S.bldDetail ? 1 : 0), 'fc=' + (S.facade ? 1 : 0));
     if (ov.length) parts.push('ov=' + ov.join(','));
     history.replaceState(history.state, '', location.href.replace(/(#.*)?$/, '#' + parts.join('&')));
   }
@@ -172,6 +178,8 @@
     var layer = feat.layer.id, g = feat.geometry;
     if (!g) return null;
     var p = feat.properties || {};
+    if (/^dt-(bld|roof)/.test(layer) && p.h != null) return { type: 'Feature', geometry: g, properties: { mode: '3d', sel: sel ? 1 : 0, h: +p.h, b: +(p.b || 0) } };
+    if (layer === 'building-3d-facade' || layer === 'building-roof') layer = 'building-3d';
     if (layer === 'building-3d') return { type: 'Feature', geometry: g, properties: { mode: '3d', sel: sel ? 1 : 0, h: +(p.render_height || C.defaultBuildingHeight), b: +(p.render_min_height || 0) } };
     if (layer === 'building-flat') return { type: 'Feature', geometry: g, properties: { mode: 'flat', sel: sel ? 1 : 0 } };
     if (/LineString/.test(g.type)) return { type: 'Feature', geometry: g, properties: { mode: 'line', sel: sel ? 1 : 0 } };
@@ -223,8 +231,59 @@
       dl(rows) + osmLinkAt(e.lngLat) +
       '<p class="pp-note">층수는 높이 ÷ ' + C.storeyHeight + ' m 로 추정한 값입니다. 면적은 화면에 보이는 타일 범위 기준입니다.</p>';
   }
+  function safeUrl(u) {
+    u = String(u || '').trim();
+    if (!u) return '';
+    if (!/^https?:\/\//i.test(u)) u = 'http://' + u;
+    return /^https?:\/\/[^\s"'<>]+$/i.test(u) ? u : '';
+  }
+  function tagsOf(p) { try { return JSON.parse(p.tg || '{}'); } catch (e) { return {}; } }
+  var SRC_NOTE = '<p class="pp-note">출처: OpenStreetMap 기여자. 한국 상호·시설 정보는 지도 앱보다 빠진 곳이 많을 수 있습니다.</p>';
+  function placePopup(f, e) {
+    var p = f.properties || {}, t = tagsOf(p);
+    var web = safeUrl(t.website || t['contact:website']);
+    var phone = t.phone || t['contact:phone'] || '';
+    var cat = p.cat || 'other';
+    return '<h3>' + esc(p.name) + '</h3><p class="pp-type">' + esc(SJ.poiCategoryLabels[cat] || '') + (p.ko ? ' · ' + esc(p.ko) : '') + '</p>' +
+      dl([['영문', t['name:en'] || ''], ['층', p.level || ''], ['주소', SJ.addrOf(t)], ['전화', phone], ['영업시간', t.opening_hours || ''],
+        ['브랜드', t['brand:ko'] || t.brand || ''], ['운영', t.operator || ''], ['음식', t.cuisine || ''], ['설명', t.description || '']]) +
+      (phone ? '<a href="tel:' + esc(phone.replace(/[^0-9+]/g, '')) + '">전화 걸기</a> · ' : '') +
+      (web ? '<a href="' + esc(web) + '" target="_blank" rel="noopener nofollow">웹사이트</a> · ' : '') +
+      '<a href="https://www.openstreetmap.org/' + esc(p.oid) + '" target="_blank" rel="noopener">OSM 객체 보기</a>' + SRC_NOTE;
+  }
+  function detailBuildingFeature(f) {
+    if (f.properties.kind === 'building' || f.properties.kind === 'part') return f;
+    var d = SJ.overlays.get('rt-dt-bld').data.features, oid = f.properties.oid;
+    for (var i = 0; i < d.length; i++) if (d[i].properties.oid === oid && (d[i].properties.kind === 'building' || d[i].properties.kind === 'part')) return d[i];
+    return f;
+  }
+  function detailBuildingPopup(f0, e) {
+    var f = detailBuildingFeature(f0), p = f.properties || {}, t = tagsOf(p);
+    var levels = t['building:levels'], under = t['building:levels:underground'];
+    var hNote = p.hsrc === 'height' ? 'OSM height' : p.hsrc === 'levels' ? '층수×3 m 추정' : '정보 없음, 기본값';
+    var inside = SJ.detail.placesInside(f.geometry).slice(0, 12);
+    var list = inside.length ? '<p class="pp-muted">입점 ' + inside.length + (inside.length >= 12 ? '+' : '') + '곳: ' +
+      inside.map(function (x) { return esc(x.properties.name) + (x.properties.level ? '(' + esc(x.properties.level) + '층)' : ''); }).join(', ') + '</p>' : '';
+    var area = SJ.geo.polygonArea(f.geometry);
+    return '<h3>' + esc(p.name || SJ.btypeKo(p.btype) || '건물') + '</h3><p class="pp-type">' + esc(SJ.useLabels[p.cat] || '') +
+      (p.btype ? ' · ' + esc(SJ.btypeKo(p.btype)) : '') + (p.kind === 'part' ? ' (건물 일부)' : '') + '</p>' +
+      dl([['높이', p.h + ' m (' + hNote + ')'], ['시작 높이', +p.b ? p.b + ' m' : ''], ['지상 층수', levels ? levels + '층' : ''], ['지하 층수', under ? under + '층' : ''],
+        ['지붕', SJ.roofKo(p.roof)], ['외벽 색', t['building:colour'] || ''], ['외벽 재질', t['building:material'] || ''],
+        ['바닥 면적', area > 1 ? '약 ' + U.fmtArea(area) : ''], ['주소', SJ.addrOf(t)], ['준공', t.start_date || ''], ['위치', coordText(e.lngLat)]]) +
+      list + '<a href="https://www.openstreetmap.org/' + esc(p.oid) + '" target="_blank" rel="noopener">OSM 객체 보기</a>' +
+      '<p class="pp-note">출처: OpenStreetMap 기여자 (건물 상세)</p>';
+  }
+  function smallPointPopup(f, e) {
+    var p = f.properties, t = tagsOf(p);
+    var title = p.kind === 'entrance' ? (p.name || '출입구') : '횡단보도';
+    return '<h3>' + esc(title) + '</h3>' + dl([['종류', p.kind === 'entrance' ? (t.entrance === 'main' ? '주 출입구' : t.entrance === 'yes' ? '출입구' : t.entrance || '') : (t.crossing || '')],
+      ['휠체어', t.wheelchair === 'yes' ? '가능' : t.wheelchair === 'no' ? '불가' : ''], ['위치', coordText(e.lngLat)]]) +
+      '<a href="https://www.openstreetmap.org/' + esc(p.oid) + '" target="_blank" rel="noopener">OSM 객체 보기</a>';
+  }
   function poiPopup(f, e) {
     var p = f.properties || {};
+    var rich = f.geometry && f.geometry.type === 'Point' ? SJ.detail.findPlace(nameOf(p), f.geometry.coordinates) : null;
+    if (rich) return placePopup(rich, e);
     var cat = SJ.poiCategoryOf(p.class, p.subclass);
     var en = p['name:en'] || p['name:latin'] || '';
     return '<h3>' + esc(nameOf(p)) + '</h3><p class="pp-type">' + esc(SJ.poiCategoryLabels[cat]) + ' · ' + esc(ko(p.subclass || p.class)) + '</p>' +
@@ -261,16 +320,21 @@
   }
 
   var CLICK_ORDER = [
+    ['dt-places', placePopup], ['dt-entrance', smallPointPopup],
     ['ov-bus', overpassPopup], ['ov-bike-rental', overpassPopup], ['ov-amenity', overpassPopup], ['label-poi', poiPopup],
     ['label-peak', function (f, e) { var p = f.properties; return '<h3>' + esc(nameOf(p)) + '</h3><p class="pp-type">산 · 봉우리</p>' + dl([['해발', p.ele != null ? Math.round(p.ele) + ' m' : ''], ['위치', coordText(e.lngLat)]]) + osmLinkAt(e.lngLat); }],
-    ['ov-tree', overpassPopup], ['hover-building', null], ['building-3d', buildingPopup], ['building-flat', buildingPopup],
+    ['ov-tree', overpassPopup], ['hover-building', null], ['dt-bld-label', detailBuildingPopup], ['dt-roof', detailBuildingPopup], ['dt-bld-cap', detailBuildingPopup],
+    ['dt-bld-facade', detailBuildingPopup], ['dt-bld-3d', detailBuildingPopup],
+    ['building-roof', buildingPopup], ['building-3d-facade', buildingPopup], ['building-3d', buildingPopup], ['building-flat', buildingPopup],
+    ['dt-crossing', smallPointPopup],
     ['ov-bike-track', overpassPopup], ['ov-bike-lane', overpassPopup], ['ov-tree-row', overpassPopup],
     ['bridge-fill', roadPopup], ['road-fill', roadPopup], ['tunnel-fill', roadPopup], ['road-path', roadPopup], ['road-cycleway', roadPopup], ['road-rail', roadPopup], ['bridge-rail', roadPopup],
     ['ov-emd-fill', overpassPopup],
     ['water', function (f, e) { return areaPopup(f, e, '수역'); }], ['waterway', function (f, e) { return areaPopup(f, e, '하천'); }],
     ['park', function (f, e) { return areaPopup(f, e, '공원'); }],
   ];
-  var HOVER_LAYERS = ['building-3d', 'building-flat', 'label-poi', 'label-peak', 'ov-bus', 'ov-bike-rental', 'ov-amenity', 'ov-tree', 'ov-emd-fill', 'bridge-fill', 'road-fill'];
+  var BUILDING_LAYERS = ['building-3d', 'building-3d-facade', 'building-roof', 'building-flat', 'dt-bld-3d', 'dt-bld-facade', 'dt-bld-cap', 'dt-roof'];
+  var HOVER_LAYERS = ['dt-places', 'dt-bld-label', 'dt-bld-cap', 'dt-roof', 'dt-bld-facade', 'dt-bld-3d', 'building-roof', 'building-3d-facade', 'building-3d', 'building-flat', 'label-poi', 'label-peak', 'ov-bus', 'ov-bike-rental', 'ov-amenity', 'ov-tree', 'ov-emd-fill', 'bridge-fill', 'road-fill'];
 
   function visibleLayers(list) {
     return list.filter(function (l) { return map.getLayer(l) && map.getLayoutProperty(l, 'visibility') !== 'none'; });
@@ -306,7 +370,7 @@
       var feats = layers.length ? map.queryRenderedFeatures(ev.point, { layers: layers }) : [];
       var f = feats[0];
       map.getCanvas().style.cursor = f ? 'pointer' : '';
-      var h = f && (f.layer.id === 'building-3d' || f.layer.id === 'building-flat') ? toHighlight(f, false) : null;
+      var h = f && BUILDING_LAYERS.indexOf(f.layer.id) >= 0 ? toHighlight(f, false) : null;
       if (h || hoverFeat) { hoverFeat = h; hoverData(); }
       var emd = feats.filter(function (x) { return x.layer.id === 'ov-emd-fill'; })[0];
       var oid = emd ? emd.properties.oid : '';
@@ -356,12 +420,12 @@
     setVis(SJ.layerGroups.labels.filter(function (id) { return id !== 'label-poi' && id !== 'label-housenumber'; }), S.labels);
     setVis(['label-poi'], S.labels && S.poi);
     setVis(['label-housenumber'], S.labels && S.housenumbers);
+    setVis(['dt-places'], S.labels && S.places);
+    setVis(['dt-bld-label'], S.labels);
   }
   function applyBuildings() {
-    setVis(['building-3d'], S.buildings === '3d');
-    setVis(['building-flat'], S.buildings === 'flat');
+    restyle();
     hoverFeat = null; selectFeat = null; hoverData();
-    $('legend').classList.toggle('off', S.buildings === 'off' || S.colorMode !== 'height');
   }
   function applyBoundary() {
     SJ.overlays.setVisible('rt-sejong', S.boundary);
@@ -412,7 +476,10 @@
     Array.prototype.forEach.call(document.querySelectorAll('input[name=' + name + ']'), function (el) { el.checked = el.value === value; });
   }
   bindRadio('bmode', 'buildings', applyBuildings);
-  bindRadio('bcolor', 'colorMode', function () { restyle(); applyBuildings(); });
+  bindRadio('bcolor', 'colorMode', applyBuildings);
+  bindCheck('chk-facade', 'facade', applyBuildings);
+  bindCheck('chk-bld-detail', 'bldDetail', function () { SJ.detail.setEnabled(map, 'buildings', S.bldDetail); applyBuildings(); });
+  bindCheck('chk-places', 'places', function () { SJ.detail.setEnabled(map, 'places', S.places); applyLabels(); });
 
   var exag = $('rng-exag');
   exag.value = S.exaggeration; $('out-exag').textContent = S.exaggeration.toFixed(1) + '×';
@@ -425,7 +492,17 @@
 
   // ── 범례 ───────────────────────────────────────────
   function renderLegend() {
-    var ramp = SJ.palette().buildingRamp, max = ramp[ramp.length - 1][0];
+    var P = SJ.palette(), useMode = S.colorMode === 'use';
+    $('legend').classList.toggle('off', S.buildings === 'off' || S.colorMode === 'solid' || S.colorMode === 'osm');
+    $('legend-bar').hidden = useMode; $('legend-ticks').hidden = useMode;
+    var sw = $('legend-use');
+    sw.hidden = !useMode;
+    if (useMode) {
+      sw.innerHTML = SJ.useCategories.map(function (c) {
+        return '<span><i style="background:' + P.buildingUse[c] + '"></i>' + esc(SJ.useLabels[c]) + '</span>';
+      }).join('');
+    }
+    var ramp = P.buildingRamp, max = ramp[ramp.length - 1][0];
     $('legend-bar').style.background = 'linear-gradient(to right,' + ramp.map(function (s) { return s[1] + ' ' + (s[0] / max * 100).toFixed(1) + '%'; }).join(',') + ')';
     $('legend-ticks').innerHTML = [0, 20, 40, 70, 110, 160].map(function (v) {
       return '<span style="left:' + (v / max * 100) + '%">' + v + (v === max ? 'm+' : '') + '</span>';
@@ -439,6 +516,7 @@
   function applyLight() {
     lightRaf = 0;
     var L = SJ.lighting.compute(S.timeMin, SJ.palette());
+    SJ.icons.setNight(map, SJ.palette(), L.sun.altitude < -4);
     map.setLight(L.light);
     map.setSky(L.sky);
     if (map.getLayer('hillshade')) {
@@ -714,6 +792,19 @@
     if (handled) e.preventDefault();
   });
 
+  // ── 상세 데이터 상태 표시 (작고 방해되지 않게) ───────────
+  var pillTimer;
+  function detailPill(c) {
+    var el = $('detail-pill');
+    clearTimeout(pillTimer);
+    if (!c.wanted) { el.hidden = true; return; }
+    el.hidden = false;
+    el.classList.toggle('err', c.failed > 0 && !c.loading);
+    if (c.loading) el.textContent = '상호·건물 정보 불러오는 중 ' + c.loaded + '/' + c.wanted;
+    else if (c.failed) el.textContent = '일부 구역 정보를 못 불러옴 · ' + (c.backoff > 0 ? Math.ceil(c.backoff / 1000) + '초 뒤 ' : '잠시 뒤 ') + '재시도';
+    else { el.textContent = '상호·건물 정보 ' + c.loaded + '/' + c.wanted + ' 구역'; pillTimer = setTimeout(function () { el.hidden = true; }, 2500); }
+  }
+
   // ── 로드 완료 ──────────────────────────────────────
   map.on('load', function () {
     clearTimeout(slowTimer);
@@ -740,6 +831,14 @@
       setStatus('세종시 경계를 불러오지 못해 대략적인 범위를 사용합니다. (' + SJ.net.errorText(err, '경계 요청') + ')', true);
     });
     SJ.overpass.attach(map);
+    SJ.detail.onCover = function () {
+      var f = SJ.tileBuildingFilter(S);
+      SJ.BUILDING_TILE_LAYERS.forEach(function (id) { if (map.getLayer(id)) map.setFilter(id, f); });
+    };
+    SJ.detail.onStatus = detailPill;
+    SJ.detail.setEnabled(map, 'places', S.places, true);
+    SJ.detail.setEnabled(map, 'buildings', S.bldDetail, true);
+    SJ.detail.attach(map);
     ovFromHash.forEach(function (id) { var el = $('ov-' + id); if (el) { el.checked = true; SJ.overpass.setEnabled(map, id, true); } });
     if (location.protocol === 'file:') console.info('[세종 3D 지도] file:// 로 열었습니다. 일부 브라우저는 file:// 에서 Referer 를 보내지 않아 Nominatim 이 요청을 거부할 수 있습니다.');
   });

@@ -43,24 +43,45 @@
   };
 
   // ── 직렬 요청 큐 ─────────────────────────────────────
+  // 직렬 요청 큐: 한 번에 하나, 요청 사이 최소 간격, 429/503/504 이면 점점 길게 쉬기(backoff).
+  //  opts.signal    : 외부에서 취소(오래된 요청 중단)
+  //  opts.shouldRun : 차례가 왔을 때 false 면 요청하지 않고 건너뜀 (화면을 벗어난 셀 등)
   function makeQueue(minInterval, timeoutMs) {
-    var last = 0, chain = Promise.resolve();
-    return function (url, opts) {
+    var last = 0, chain = Promise.resolve(), backoffUntil = 0, backoffMs = 0;
+    var q = function (url, opts) {
+      opts = opts || {};
       var run = function () {
-        var wait = Math.max(0, last + minInterval - Date.now());
+        if (opts.shouldRun && !opts.shouldRun()) { var sk = new Error('건너뜀'); sk.skipped = true; return Promise.reject(sk); }
+        if (opts.signal && opts.signal.aborted) { var ab = new Error('취소됨'); ab.aborted = true; return Promise.reject(ab); }
+        var wait = Math.max(0, last + minInterval - Date.now(), backoffUntil - Date.now());
         return new Promise(function (r) { setTimeout(r, wait); }).then(function () {
+          if (opts.shouldRun && !opts.shouldRun()) { var sk2 = new Error('건너뜀'); sk2.skipped = true; throw sk2; }
           last = Date.now();
           var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-          var timer = ctl && setTimeout(function () { ctl.abort(); }, timeoutMs);
-          var o = Object.assign({}, opts || {});
+          var timedOut = false;
+          var timer = ctl && setTimeout(function () { timedOut = true; ctl.abort(); }, timeoutMs);
+          var onExt = function () { if (ctl) ctl.abort(); };
+          if (opts.signal) opts.signal.addEventListener('abort', onExt);
+          var o = {};
+          ['method', 'headers', 'body'].forEach(function (k) { if (opts[k] !== undefined) o[k] = opts[k]; });
           if (ctl) o.signal = ctl.signal;
+          var done = function () { clearTimeout(timer); if (opts.signal) opts.signal.removeEventListener('abort', onExt); };
           return fetch(url, o).then(function (res) {
-            clearTimeout(timer);
+            done();
+            if (res.status === 429 || res.status === 503 || res.status === 504) {
+              backoffMs = Math.min(120000, backoffMs ? backoffMs * 2 : 5000);
+              backoffUntil = Date.now() + backoffMs;
+            }
             if (!res.ok) { var e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
+            backoffMs = 0;
             return res.json();
           }, function (err) {
-            clearTimeout(timer);
-            if (err && err.name === 'AbortError') { var e2 = new Error('시간 초과'); e2.timeout = true; throw e2; }
+            done();
+            if (err && err.name === 'AbortError') {
+              var e2 = new Error(timedOut ? '시간 초과' : '취소됨');
+              if (timedOut) e2.timeout = true; else e2.aborted = true;
+              throw e2;
+            }
             throw err;
           });
         });
@@ -69,6 +90,8 @@
       chain = p.catch(function () {});
       return p;
     };
+    q.backoffRemaining = function () { return Math.max(0, backoffUntil - Date.now()); };
+    return q;
   }
   SJ.net = {
     nominatim: makeQueue(SJ.config.nominatimMinIntervalMs, 20000),

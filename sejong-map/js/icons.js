@@ -147,8 +147,103 @@
     return { data: out(k), opts: { pixelRatio: PR } };
   }
 
+  // ── 외벽(창문) 무늬 ─────────────────────────────────
+  // 32×32 (css px) 한 장에 여러 층·창을 그려 반복 무늬가 덜 티 나게 함. 밤에는 일부 창에 불.
+  function hexToRgb(c) { var n = parseInt(c.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+  function mixc(a, b, t) {
+    var A = hexToRgb(a), B = hexToRgb(b);
+    return 'rgb(' + [0, 1, 2].map(function (i) { return Math.round(A[i] + (B[i] - A[i]) * t); }).join(',') + ')';
+  }
+  function rampAt(P, h) {
+    var r = P.buildingRamp;
+    for (var i = 1; i < r.length; i++) if (h <= r[i][0]) {
+      var t = (h - r[i - 1][0]) / (r[i][0] - r[i - 1][0]);
+      return SJ.lighting.mix(r[i - 1][1], r[i][1], t);
+    }
+    return r[r.length - 1][1];
+  }
+  var STYLES = {
+    // [열, 행, 창 너비 비율, 창 높이 비율, 커튼월 여부, 가로 띠]
+    low: [2, 3, 0.42, 0.42, 0, 0],
+    small: [3, 4, 0.5, 0.48, 0, 0],
+    mid: [4, 5, 0.55, 0.5, 0, 0],
+    high: [6, 6, 0.42, 0.6, 0, 0],
+    tower: [4, 8, 0.86, 0.8, 1, 0],
+    res: [4, 5, 0.6, 0.45, 0, 1],
+    shop: [3, 4, 0.8, 0.62, 1, 0],
+    band: [2, 3, 0.85, 0.22, 0, 0],
+    sparse: [2, 2, 0.35, 0.35, 0, 0],
+  };
+  var CLASS_STYLE = { h0: 'low', h1: 'small', h2: 'mid', h3: 'high', h4: 'tower' };
+  var CLASS_H = { h0: 5, h1: 17, h2: 37, h3: 70, h4: 130 };
+  var USE_STYLE = { res: 'res', com: 'shop', pub: 'high', edu: 'small', med: 'high', ind: 'sparse', rel: 'sparse', tra: 'band', oth: 'small' };
+  function hash(i, j, k) { var t = Math.sin(i * 127.1 + j * 311.7 + k * 74.7) * 43758.5453; return t - Math.floor(t); }
+
+  function facade(styleKey, wall, P, night, seed) {
+    var S = STYLES[styleKey], k = canvas(32, 32), g = k.g;
+    var cols = S[0], rows = S[1], cw = 32 / cols, rh = 32 / rows;
+    var wallC = night ? mixc(wall, '#05070c', P.id === 'dark' ? 0.55 : 0.6) : wall;
+    g.fillStyle = wallC; g.fillRect(0, 0, 32, 32);
+    // 층 구분선
+    g.fillStyle = night ? 'rgba(0,0,0,0.25)' : mixc(wall, P.frame, 0.25);
+    for (var r0 = 0; r0 < rows; r0++) g.fillRect(0, r0 * rh + rh - 0.6, 32, 0.6);
+    if (S[5]) { // 발코니 띠
+      g.fillStyle = night ? 'rgba(255,255,255,0.06)' : mixc(wall, '#ffffff', 0.25);
+      for (var r1 = 0; r1 < rows; r1++) g.fillRect(0, r1 * rh + rh * 0.72, 32, rh * 0.12);
+    }
+    var ww = cw * S[2], wh = rh * S[3];
+    for (var i = 0; i < cols; i++) for (var j = 0; j < rows; j++) {
+      var x = i * cw + (cw - ww) / 2, y = j * rh + (rh - wh) * 0.4;
+      var col;
+      if (night) {
+        var h = hash(i, j, seed);
+        col = h < 0.38 ? P.lit : h < 0.46 ? mixc(P.lit, '#ffffff', 0.4) : P.glassNight;
+      } else {
+        col = mixc(wall, P.glass, S[4] ? 0.6 : 0.5);
+        if (hash(i, j, seed) < 0.15) col = mixc(wall, P.glass, 0.7); // 반사 차이
+      }
+      g.fillStyle = col;
+      g.fillRect(x, y, ww, wh);
+    }
+    if (S[4]) { // 커튼월 멀리언
+      g.fillStyle = night ? 'rgba(0,0,0,0.5)' : mixc(wall, P.frame, 0.45);
+      for (var m = 0; m <= cols; m++) g.fillRect(m * cw - 0.4, 0, 0.8, 32);
+    }
+    return { data: out(k), opts: { pixelRatio: PR } };
+  }
+  function facadeFor(id, P) {
+    var night = !!SJ.icons.night;
+    if (id.indexOf('sj-fac-u-') === 0) {
+      var cat = id.slice(9);
+      return facade(USE_STYLE[cat] || 'small', P.buildingUse[cat] || P.buildingSolid, P, night, cat.charCodeAt(0));
+    }
+    if (id === 'sj-fac-solid') return facade('mid', P.buildingSolid, P, night, 3);
+    var cls = id.slice(7);
+    return facade(CLASS_STYLE[cls] || 'mid', rampAt(P, CLASS_H[cls] || 30), P, night, cls.charCodeAt(1));
+  }
+  function facadeIds() {
+    var ids = ['sj-fac-solid'];
+    ['h0', 'h1', 'h2', 'h3', 'h4'].forEach(function (c) { ids.push('sj-fac-' + c); });
+    (SJ.useCategories || []).forEach(function (c) { ids.push('sj-fac-u-' + c); });
+    return ids;
+  }
+
+  function crossingIcon() {
+    var k = canvas(14, 14), g = k.g;
+    g.fillStyle = 'rgba(255,255,255,0.9)';
+    for (var i = 0; i < 4; i++) g.fillRect(1 + i * 3.4, 1, 2, 12);
+    return { data: out(k), opts: { pixelRatio: PR } };
+  }
+  function entranceIcon(P) {
+    var k = canvas(12, 12), g = k.g;
+    g.beginPath(); g.moveTo(6, 10.5); g.lineTo(1.5, 3); g.lineTo(10.5, 3); g.closePath();
+    g.fillStyle = P.accent; g.fill(); g.lineWidth = 1.2; g.strokeStyle = P.halo; g.stroke();
+    return { data: out(k), opts: { pixelRatio: PR } };
+  }
+
   function make(id, P) {
     if (id.indexOf('sj-poi-') === 0) return poiIcon(id.slice(7), P);
+    if (id.indexOf('sj-fac-') === 0) return facadeFor(id, P);
     switch (id) {
       case 'sj-peak': return peakIcon(P);
       case 'sj-oneway': return onewayIcon(P);
@@ -156,6 +251,8 @@
       case 'sj-shield-road': return shieldIcon('#3d7f5f', '#ffffff');
       case 'sj-bus': return busStopIcon(P);
       case 'sj-bike': return bikeIcon(P);
+      case 'sj-crossing': return crossingIcon();
+      case 'sj-entrance': return entranceIcon(P);
     }
     return null;
   }
@@ -163,13 +260,26 @@
   SJ.icons = {
     ids: function () {
       return SJ.poiCategories.map(function (c) { return 'sj-poi-' + c; })
-        .concat(['sj-peak', 'sj-oneway', 'sj-shield-motorway', 'sj-shield-road', 'sj-bus', 'sj-bike']);
+        .concat(['sj-peak', 'sj-oneway', 'sj-shield-motorway', 'sj-shield-road', 'sj-bus', 'sj-bike', 'sj-crossing', 'sj-entrance'])
+        .concat(facadeIds());
     },
     make: make,
     // 지도에 없는 이미지를 요청받았을 때
     onMissing: function (map, id, P) {
       var r = make(id, P);
       if (r && !map.hasImage(id)) map.addImage(id, r.data, r.opts);
+    },
+    night: false,
+    // 밤/낮이 바뀌면 외벽 무늬만 다시 그림 (등록된 것만)
+    setNight: function (map, P, night) {
+      if (SJ.icons.night === night) return false;
+      SJ.icons.night = night;
+      facadeIds().forEach(function (id) {
+        if (!map.hasImage(id)) return;
+        var r = make(id, P);
+        map.updateImage(id, r.data);
+      });
+      return true;
     },
     // 테마가 바뀌면 이미 등록된 이미지를 새 색으로 교체
     refresh: function (map, P) {

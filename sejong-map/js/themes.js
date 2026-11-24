@@ -72,6 +72,10 @@
       // 건물 높이(m) → 색
       buildingRamp: [[0, '#2f3b52'], [8, '#3a516e'], [20, '#46698d'], [40, '#4f8bab'], [70, '#62b0b9'], [110, '#8fd2c0'], [160, '#e4f4d2']],
       buildingFlat: '#3a4860',
+      roof: '#4a4f5c',
+      buildingLabel: '#f3e6c4',
+      glass: '#9cc4e4', glassNight: '#141c2b', lit: '#ffd27a', frame: '#0b1018',
+      buildingUse: { res: '#6f8fb8', com: '#d08a5a', pub: '#5fb8a8', edu: '#c4b05a', med: '#d0707a', ind: '#8a8270', rel: '#a58ad0', tra: '#7a8496', oth: '#56637a' },
       buildingFlatOutline: '#4b5c78',
       buildingSolid: '#596b86',
       buildingHover: '#ffd166',
@@ -162,6 +166,10 @@
 
       buildingRamp: [[0, '#e2dbd0'], [8, '#d8cdbf'], [20, '#cbbca8'], [40, '#b8b4b0'], [70, '#9fb1c6'], [110, '#7f9fc4'], [160, '#5b80b6']],
       buildingFlat: '#ddd4c8',
+      roof: '#9a8f86',
+      buildingLabel: '#3b3226',
+      glass: '#55708c', glassNight: '#2a3242', lit: '#ffcf6e', frame: '#8f8579',
+      buildingUse: { res: '#e3c9a8', com: '#e8a07a', pub: '#8cc7bb', edu: '#e6d27e', med: '#e89a9f', ind: '#b9b2a4', rel: '#c4b1e3', tra: '#b6bcc8', oth: '#d6cec2' },
       buildingFlatOutline: '#c8bdae',
       buildingSolid: '#d6cec2',
       buildingHover: '#ffb703',

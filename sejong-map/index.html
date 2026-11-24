@@ -59,22 +59,30 @@
         <label><input type="radio" name="bmode" value="flat"> 평면</label>
         <label><input type="radio" name="bmode" value="off"> 끄기</label>
       </div>
-      <div class="seg" role="radiogroup" aria-label="건물 색상">
+      <div class="seg four" role="radiogroup" aria-label="건물 색상">
         <label><input type="radio" name="bcolor" value="height"> 높이별</label>
+        <label><input type="radio" name="bcolor" value="use"> 용도별</label>
         <label><input type="radio" name="bcolor" value="osm"> OSM 색</label>
         <label><input type="radio" name="bcolor" value="solid"> 단색</label>
       </div>
       <div class="legend" id="legend" aria-label="건물 높이 범례">
         <div class="legend-bar" id="legend-bar"></div>
         <div class="legend-ticks" id="legend-ticks"></div>
-        <p class="hint">건물은 줌 13 이상에서 표시됩니다. 높이는 OSM 의 height·building:levels 값을 기반으로 합니다.</p>
+        <div class="legend-use" id="legend-use" hidden></div>
+        <p class="hint">건물은 줌 13 이상에서 표시됩니다. 높이는 OSM 의 height·building:levels 값을 기반으로 합니다.
+          용도별 색은 '건물 상세'가 로드된 곳(줌 16+)에서만 구분되고, 나머지는 회색입니다.</p>
       </div>
+      <label class="row"><span>창문·외벽 표현 <small class="hint">줌 16+</small></span><input type="checkbox" id="chk-facade"></label>
+      <label class="row"><span>건물 상세 (OSM) <small class="hint">줌 16+ 자동</small></span><input type="checkbox" id="chk-bld-detail"></label>
+      <p class="hint">건물 상세: 건물 이름(예: 101동)·용도·층수·지붕·주소를 OSM 에서 받아 더 정확한 높이로 다시 그립니다. 받은 구역은 기기에 캐시됩니다.</p>
     </details>
 
     <details class="sec" open>
       <summary><h2>레이어</h2></summary>
       <label class="row"><span>지명·라벨 <kbd>L</kbd></span><input type="checkbox" id="chk-labels"></label>
       <label class="row"><span>관심 지점(POI) 아이콘</span><input type="checkbox" id="chk-poi"></label>
+      <label class="row"><span>상호·시설명 (OSM) <small class="hint">줌 16+ 자동</small></span><input type="checkbox" id="chk-places"></label>
+      <p class="hint">상호명은 OpenStreetMap 자원봉사 데이터라 네이버·카카오 지도보다 빠진 가게가 많을 수 있습니다.</p>
       <label class="row"><span>영문 이름 병기</span><input type="checkbox" id="chk-latin"></label>
       <label class="row"><span>건물 번호(번지) · 줌 17+</span><input type="checkbox" id="chk-housenumbers"></label>
       <label class="row"><span>시 경계 · 바깥 어둡게</span><input type="checkbox" id="chk-boundary"></label>
@@ -141,6 +149,7 @@
   <span id="readout-view">–</span>
 </div>
 <div id="caption" class="caption" aria-live="polite" hidden></div>
+<div id="detail-pill" class="detail-pill" role="status" aria-live="polite" hidden></div>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
 <dialog id="help" class="help" aria-labelledby="help-title">
@@ -181,6 +190,7 @@
 <script src="js/icons.js"></script>
 <script src="js/places.js"></script>
 <script src="js/overpass.js"></script>
+<script src="js/detail.js"></script>
 <script src="js/tools.js"></script>
 <script src="js/app.js"></script>
 </body>

@@ -144,7 +144,7 @@
     return e;
   }
   SJ.buildingColor = function (P, mode) {
-    if (mode === 'solid') return P.buildingSolid;
+    if (mode === 'solid' || mode === 'use') return P.buildingSolid; // 타일에는 용도 정보가 없음
     if (mode === 'osm') {
       return ['case', ['has', 'colour'], ['to-color', ['get', 'colour'], P.buildingSolid], rampExpr(P)];
     }
@@ -169,6 +169,79 @@
     m.push(m2);
     return m;
   }
+
+  // POI 범주 → 값 표현식 (아이콘 이름·색·한국어 분류명 공용)
+  function poiMatch(valueOf, fallback) {
+    var m = ['match', ['coalesce', ['get', 'subclass'], '']], m2 = ['match', ['coalesce', ['get', 'class'], '']];
+    var seen = {}, seen2 = {};
+    Object.keys(POI).forEach(function (cat) {
+      POI[cat].forEach(function (c) {
+        var v = valueOf(cat, c);
+        if (v == null) return;
+        if (!seen[c]) { seen[c] = 1; m.push(c, v); }
+        if (!seen2[c]) { seen2[c] = 1; m2.push(c, v); }
+      });
+    });
+    m2.push(fallback);
+    m.push(m2);
+    return m;
+  }
+  function poiKoExpr() {
+    // subclass/class 의 한국어 이름 (사전에 없으면 빈 문자열)
+    var m = ['match', ['coalesce', ['get', 'subclass'], '']], m2 = ['match', ['coalesce', ['get', 'class'], '']];
+    var keys = {};
+    Object.keys(POI).forEach(function (cat) { POI[cat].forEach(function (c) { if (SJ.classLabelsKo[c]) keys[c] = SJ.classLabelsKo[c]; }); });
+    ['bus_stop', 'station', 'halt', 'townhall', 'convenience', 'supermarket'].forEach(function (c) { if (SJ.classLabelsKo[c]) keys[c] = SJ.classLabelsKo[c]; });
+    Object.keys(keys).forEach(function (k) { m.push(k, keys[k]); m2.push(k, keys[k]); });
+    m2.push('');
+    m.push(m2);
+    return m;
+  }
+  SJ.poiKoExpr = poiKoExpr;
+
+  // ── 건물 외벽(창문 무늬)·용도별 색 ─────────────────────
+  SJ.FACADE_Z = 16;
+  SJ.HEIGHT_CLASSES = [[0, 'h0'], [10, 'h1'], [25, 'h2'], [50, 'h3'], [90, 'h4']];
+  function heightStep(hExpr, prefix) {
+    var e = ['step', hExpr, prefix + SJ.HEIGHT_CLASSES[0][1]];
+    SJ.HEIGHT_CLASSES.slice(1).forEach(function (c) { e.push(c[0], prefix + c[1]); });
+    return e;
+  }
+  // 외벽 무늬를 쓸 수 있는지 (OSM 색 모드는 건물마다 색이 달라 무늬 이미지로 표현 불가 → 단색 유지)
+  SJ.facadeOn = function (S) { return !!S.facade && S.colorMode !== 'osm'; };
+  SJ.facadePattern = function (S, hExpr, isDetail) {
+    if (S.colorMode === 'height') return heightStep(hExpr, 'sj-fac-');
+    if (S.colorMode === 'use' && isDetail) {
+      var m = ['match', ['get', 'cat']];
+      SJ.useCategories.slice(0, -1).forEach(function (c) { m.push(c, 'sj-fac-u-' + c); });
+      m.push('sj-fac-u-oth');
+      return m;
+    }
+    return 'sj-fac-solid';
+  };
+  SJ.detailColor = function (P, S) {
+    var h = ['get', 'h'];
+    var ramp = ['interpolate', ['linear'], h];
+    P.buildingRamp.forEach(function (st) { ramp.push(st[0], st[1]); });
+    if (S.colorMode === 'solid') return P.buildingSolid;
+    if (S.colorMode === 'use') {
+      var m = ['match', ['get', 'cat']];
+      SJ.useCategories.slice(0, -1).forEach(function (c) { m.push(c, P.buildingUse[c]); });
+      m.push(P.buildingUse.oth);
+      return m;
+    }
+    if (S.colorMode === 'osm') return ['case', ['!=', ['coalesce', ['get', 'colour'], ''], ''], ['to-color', ['get', 'colour'], P.buildingSolid], ramp];
+    return ramp;
+  };
+  // 타일 건물 필터: 건물 상세가 로드된 셀 안(또는 25 m 이내)의 타일 건물은 숨겨 이중 표시 방지
+  SJ.BUILDING_TILE_LAYERS = ['building-3d', 'building-3d-facade', 'building-roof'];
+  SJ.tileBuildingFilter = function (S) {
+    var base = ['!=', ['get', 'hide_3d'], true];
+    if (S.detailCover && S.bldDetail && S.buildings === '3d') {
+      return ['all', base, ['step', ['zoom'], true, 15, ['>', ['distance', S.detailCover], 25]]];
+    }
+    return base;
+  };
 
   // 레이어 ID 그룹 (토글용)
   SJ.layerGroups = {
@@ -388,15 +461,37 @@
     add({ id: 'building-flat', type: 'fill', source: 'omt', 'source-layer': 'building', minzoom: 13,
       layout: { visibility: vis(S.buildings === 'flat') },
       paint: { 'fill-color': bcol, 'fill-outline-color': P.buildingFlatOutline, 'fill-opacity': zl([[13, 0.6], [15, 1]]) } });
-    add({ id: 'building-3d', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building', minzoom: 13,
-      filter: ['!=', ['get', 'hide_3d'], true],
-      layout: { visibility: vis(S.buildings === '3d') },
+    var fac = SJ.facadeOn(S), b3 = S.buildings === '3d', tf = SJ.tileBuildingFilter(S);
+    var b3d = { id: 'building-3d', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building', minzoom: 13,
+      filter: tf,
+      layout: { visibility: vis(b3) },
       paint: {
         'fill-extrusion-color': bcol,
         'fill-extrusion-height': zl([[13, 0], [13.6, SJ.heightExpr]]),
         'fill-extrusion-base': zl([[13, 0], [13.6, SJ.baseExpr]]),
         'fill-extrusion-opacity': 0.93,
         'fill-extrusion-vertical-gradient': true,
+      } };
+    b3d.maxzoom = fac ? SJ.FACADE_Z : 24; // 명시해야 테마/모드 전환(diff) 때 확대 범위가 갱신됨
+    add(b3d);
+    // 줌 16 이상: 외벽에 창문 무늬, 지붕은 얇은 단색 판으로 덮어 무늬가 지붕에 보이지 않게
+    add({ id: 'building-3d-facade', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building', minzoom: SJ.FACADE_Z,
+      filter: tf,
+      layout: { visibility: vis(b3 && fac) },
+      paint: {
+        'fill-extrusion-pattern': SJ.facadePattern(S, SJ.heightExpr, false),
+        'fill-extrusion-height': SJ.heightExpr,
+        'fill-extrusion-base': SJ.baseExpr,
+        'fill-extrusion-opacity': 0.95,
+      } });
+    add({ id: 'building-roof', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building', minzoom: SJ.FACADE_Z,
+      filter: tf,
+      layout: { visibility: vis(b3 && fac) },
+      paint: {
+        'fill-extrusion-color': bcol,
+        'fill-extrusion-height': ['+', SJ.heightExpr, 0.4],
+        'fill-extrusion-base': SJ.heightExpr,
+        'fill-extrusion-opacity': 0.95,
       } });
 
     // ── 라벨 ──
@@ -439,16 +534,22 @@
     addL({ id: 'label-housenumber', type: 'symbol', source: 'omt', 'source-layer': 'housenumber', minzoom: 17,
       layout: { visibility: vis(S.labels && S.housenumbers), 'text-field': ['to-string', ['get', 'housenumber']], 'text-font': F, 'text-size': 10, 'text-padding': 2 },
       paint: { 'text-color': P.housenumber, 'text-halo-color': P.halo, 'text-halo-width': 1 } });
+    // 줌 16: 순위 60 이내, 17 이상: 이름 있는 POI 전부. 줌 17+ 에서는 분류명을 범주 색으로 한 줄 더.
+    var rank = ['coalesce', ['get', 'rank'], 99];
+    var catColor = poiMatch(function (cat) { return P.poi[cat]; }, P.poi.other);
+    var poiText = S.latin ? LBL : ['step', ['zoom'], ['format', NAME, {}],
+      17, ['case', ['!=', poiKoExpr(), ''],
+        ['format', NAME, {}, '\n', {}, poiKoExpr(), { 'font-scale': 0.78, 'text-color': catColor }],
+        ['format', NAME, {}]]];
     addL({ id: 'label-poi', type: 'symbol', source: 'omt', 'source-layer': 'poi', minzoom: 13,
       filter: ['all', ['!=', NAME, ''], ['step', ['zoom'],
-        ['<=', ['coalesce', ['get', 'rank'], 99], 3], 15, ['<=', ['coalesce', ['get', 'rank'], 99], 14],
-        16, ['<=', ['coalesce', ['get', 'rank'], 99], 30], 17, true]],
+        ['<=', rank, 3], 15, ['<=', rank, 16], 16, ['<=', rank, 60], 17, true]],
       layout: { visibility: vis(S.labels && S.poi),
-        'icon-image': poiIconExpr(), 'icon-size': zl([[13, 0.75], [17, 1]]),
-        'text-field': LBL, 'text-font': F, 'text-size': zl([[13, 10.5], [18, 12.5]]), 'text-max-width': 8,
+        'icon-image': poiIconExpr(), 'icon-size': zl([[13, 0.75], [17, 0.95]]),
+        'text-field': poiText, 'text-font': F, 'text-size': zl([[13, 10.5], [18, 12.5]]), 'text-max-width': 8,
         'text-variable-anchor': ['top', 'bottom', 'left', 'right'], 'text-radial-offset': 0.9, 'text-justify': 'auto',
-        'symbol-sort-key': ['coalesce', ['get', 'rank'], 99], 'text-optional': true, 'icon-padding': 3 },
-      paint: Object.assign({ 'text-color': P.textMuted }, halo) });
+        'symbol-sort-key': rank, 'icon-optional': true, 'text-padding': 1, 'icon-padding': 1 },
+      paint: Object.assign({ 'text-color': P.text }, halo) });
     addL({ id: 'label-peak', type: 'symbol', source: 'omt', 'source-layer': 'mountain_peak', minzoom: 10,
       filter: ['all', ['!=', NAME, ''], ['!', ['in', ['coalesce', ['get', 'class'], 'peak'], ['literal', ['saddle', 'cliff', 'ridge', 'arete']]]]],
       layout: { 'icon-image': 'sj-peak', 'icon-size': 0.8, 'icon-anchor': 'bottom',

@@ -32,7 +32,7 @@
 
     // ── 추가 OSM 데이터 (Overpass API) ─────────────────────
     overpassUrls: ['https://overpass-api.de/api/interpreter'],
-    overpassMinIntervalMs: 2000,
+    overpassMinIntervalMs: 1000,
     // 대한민국 OSM 관례상 읍·면·동 = admin_level 8 (틀리면 여기서 수정)
     emdAdminLevel: '8',
 

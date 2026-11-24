@@ -106,6 +106,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .results .r-empty { padding: 10px; font-size: 12px; color: var(--muted); }
 
 .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 3px; margin: 0 0 6px; border: 1px solid var(--line); border-radius: 10px; }
+.seg.four { grid-template-columns: repeat(4, 1fr); }
 .seg label { position: relative; text-align: center; font-size: 12.5px; padding: 6px 0; border-radius: 7px; cursor: pointer; }
 .seg input { position: absolute; opacity: 0; inset: 0; cursor: pointer; margin: 0; }
 .seg label:has(input:checked) { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
@@ -118,6 +119,17 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .legend-ticks span:first-child { transform: none; }
 .legend-ticks span:last-child { transform: translateX(-100%); }
 .legend.off { opacity: .45; }
+.legend [hidden] { display: none !important; }
+.legend-use { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px 8px; font-size: 11px; color: var(--muted); margin: 2px 0 4px; }
+.legend-use span { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.legend-use i { width: 10px; height: 10px; border-radius: 3px; flex: none; border: 1px solid var(--line); }
+.row small.hint { display: inline; margin-left: 4px; }
+.detail-pill {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 4; pointer-events: none;
+  font-size: 11.5px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+  padding: 4px 12px; backdrop-filter: blur(8px); white-space: nowrap;
+}
+.detail-pill.err { color: var(--danger); }
 
 .slider { padding: 4px 0; }
 .slider label { display: flex; justify-content: space-between; font-size: 13px; }
@@ -227,6 +239,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   .readout { left: 8px !important; top: 8px; bottom: auto; font-size: 10.5px; max-width: calc(100% - 64px); flex-wrap: wrap; row-gap: 0; }
   .readout button, .readout #readout-view { font-size: 10.5px; }
   .caption { bottom: auto; top: 64px; font-size: 18px; width: 90%; }
+  .detail-pill { bottom: auto; top: 44px; font-size: 10.5px; }
   kbd { display: none; }
   .maplibregl-ctrl-bottom-right { bottom: 64px; }
   .maplibregl-ctrl-bottom-left { display: none; }
