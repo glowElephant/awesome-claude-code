@@ -77,6 +77,10 @@
       applyBoundary(cached, 'cache');
       return Promise.resolve(SJ.boundary);
     }
+    if (SJ.boundaryData && SJ.boundaryData.geometry) {
+      applyBoundary(SJ.boundaryData, 'bundled');
+      return Promise.resolve(SJ.boundary);
+    }
     var url = SJ.net.nominatimUrl({ q: C.boundaryQuery, polygon_geojson: 1, polygon_threshold: 0.0002, limit: 5, bounded: 0 });
     return SJ.net.nominatim(url).then(function (list) {
       var f = polygonFeature(list);

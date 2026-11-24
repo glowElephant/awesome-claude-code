@@ -541,29 +541,34 @@
       emit();
       var prov = providers[LAYERS[need[0]].provider];
       prov.fetch(need, cell.box, { signal: ac && ac.signal, shouldRun: wanted }).then(function (res) {
+        failStreak = 0;
         need.forEach(function (id) {
           st[id].inflight.delete(k);
           finish(id, entries[id], res[id] || [], false);
           idbPut(id + '|' + k, res[id] || []);
         });
       }).catch(function (err) {
+        var real = !(err && (err.skipped || err.aborted));
+        if (real) failStreak++;
+        // 연속 실패 시 8초 → 16초 → … 최대 2분 간격으로 늦춰 공개 서버에 부담을 주지 않습니다.
+        var wait = Math.max(Math.min(120000, 8000 * Math.pow(2, Math.max(0, failStreak - 1))), SJ.net.overpass.backoffRemaining() + 1000);
         need.forEach(function (id) {
           st[id].inflight.delete(k);
           if (err && (err.skipped || err.aborted)) { st[id].cells.delete(k); return; }
           entries[id].status = 'failed';
           entries[id].err = err;
-          entries[id].retryAt = Date.now() + Math.max(8000, SJ.net.overpass.backoffRemaining() + 1000);
+          entries[id].retryAt = Date.now() + wait;
         });
         if (!(err && (err.skipped || err.aborted))) {
           console.info('[상세 데이터] ' + k + ' 실패:', err && err.message);
           clearTimeout(retryTimer);
-          retryTimer = setTimeout(function () { update(map); }, Math.max(8000, SJ.net.overpass.backoffRemaining() + 1000) + 50);
+          retryTimer = setTimeout(function () { update(map); }, wait + 50);
         }
         emit();
       });
     });
   }
-  var retryTimer = null;
+  var retryTimer = null, failStreak = 0;
 
   function update(map) {
     var z = map.getZoom(), cellsById = {}, all = {};

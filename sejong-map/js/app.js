@@ -42,7 +42,7 @@
     places: true, bldDetail: true, facade: true, detailCover: null,
     timeMin: null,
   }, SJ.store.get('sj.settings.v1', {}));
-  S.timeMin = SJ.lighting.nowMinutes();
+  S.timeMin = 14 * 60; // 첫 화면은 낮(14시)으로 시작. '지금' 버튼으로 현재 시각 적용
   S.detailCover = null;
   var ovFromHash = [];
 
