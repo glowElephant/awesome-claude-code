@@ -247,3 +247,5 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 @media (max-width: 720px) and (max-height: 500px) {
   .panel { max-height: calc(100% - 16px); left: auto; width: 300px; }
 }
+
+.sj-rot button { font-size: 17px; line-height: 29px; color: var(--text); background: transparent; cursor: pointer; }

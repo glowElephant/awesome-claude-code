@@ -179,17 +179,21 @@
   var USE_STYLE = { res: 'res', com: 'shop', pub: 'high', edu: 'small', med: 'high', ind: 'sparse', rel: 'sparse', tra: 'band', oth: 'small' };
   function hash(i, j, k) { var t = Math.sin(i * 127.1 + j * 311.7 + k * 74.7) * 43758.5453; return t - Math.floor(t); }
 
-  function facade(styleKey, wall, P, night, seed) {
-    var S = STYLES[styleKey], k = canvas(32, 32), g = k.g;
-    var cols = S[0], rows = S[1], cw = 32 / cols, rh = 32 / rows;
+  // 확대 단계별 무늬: 한 칸 = 1개 층(약 3.7 m) × 창 1칸. 지도 배율이 2배가 될 때마다 칸 수를 절반으로 줄여
+  // 벽에 보이는 창 줄 수가 실제 층수와 맞도록 합니다. [이미지 크기(px), 한 변의 칸 수]
+  var ZBANDS = { 16: [32, 8], 17: [32, 4], 18: [64, 4], 19: [128, 4] };
+  function facade(styleKey, wall, P, night, seed, zb) {
+    var Z = ZBANDS[zb] || ZBANDS[17], W = Z[0];
+    var S = STYLES[styleKey], k = canvas(W, W), g = k.g;
+    var cols = Z[1], rows = Z[1], cw = W / cols, rh = W / rows;
     var wallC = night ? mixc(wall, '#05070c', P.id === 'dark' ? 0.55 : 0.6) : wall;
-    g.fillStyle = wallC; g.fillRect(0, 0, 32, 32);
+    g.fillStyle = wallC; g.fillRect(0, 0, W, W);
     // 층 구분선
     g.fillStyle = night ? 'rgba(0,0,0,0.25)' : mixc(wall, P.frame, 0.25);
-    for (var r0 = 0; r0 < rows; r0++) g.fillRect(0, r0 * rh + rh - 0.6, 32, 0.6);
+    for (var r0 = 0; r0 < rows; r0++) g.fillRect(0, r0 * rh + rh - 0.6, W, 0.6);
     if (S[5]) { // 발코니 띠
       g.fillStyle = night ? 'rgba(255,255,255,0.06)' : mixc(wall, '#ffffff', 0.25);
-      for (var r1 = 0; r1 < rows; r1++) g.fillRect(0, r1 * rh + rh * 0.72, 32, rh * 0.12);
+      for (var r1 = 0; r1 < rows; r1++) g.fillRect(0, r1 * rh + rh * 0.72, W, rh * 0.12);
     }
     var ww = cw * S[2], wh = rh * S[3];
     for (var i = 0; i < cols; i++) for (var j = 0; j < rows; j++) {
@@ -207,24 +211,27 @@
     }
     if (S[4]) { // 커튼월 멀리언
       g.fillStyle = night ? 'rgba(0,0,0,0.5)' : mixc(wall, P.frame, 0.45);
-      for (var m = 0; m <= cols; m++) g.fillRect(m * cw - 0.4, 0, 0.8, 32);
+      for (var m = 0; m <= cols; m++) g.fillRect(m * cw - 0.4, 0, 0.8, W);
     }
     return { data: out(k), opts: { pixelRatio: PR } };
   }
   function facadeFor(id, P) {
     var night = !!SJ.icons.night;
+    var zm = /-z(\d+)$/.exec(id), zb = zm ? +zm[1] : 17;
+    if (zm) id = id.slice(0, zm.index);
     if (id.indexOf('sj-fac-u-') === 0) {
       var cat = id.slice(9);
-      return facade(USE_STYLE[cat] || 'small', P.buildingUse[cat] || P.buildingSolid, P, night, cat.charCodeAt(0));
+      return facade(USE_STYLE[cat] || 'small', P.buildingUse[cat] || P.buildingSolid, P, night, cat.charCodeAt(0), zb);
     }
-    if (id === 'sj-fac-solid') return facade('mid', P.buildingSolid, P, night, 3);
+    if (id === 'sj-fac-solid') return facade('mid', P.buildingSolid, P, night, 3, zb);
     var cls = id.slice(7);
-    return facade(CLASS_STYLE[cls] || 'mid', rampAt(P, CLASS_H[cls] || 30), P, night, cls.charCodeAt(1));
+    return facade(CLASS_STYLE[cls] || 'mid', rampAt(P, CLASS_H[cls] || 30), P, night, cls.charCodeAt(1), zb);
   }
   function facadeIds() {
-    var ids = ['sj-fac-solid'];
-    ['h0', 'h1', 'h2', 'h3', 'h4'].forEach(function (c) { ids.push('sj-fac-' + c); });
-    (SJ.useCategories || []).forEach(function (c) { ids.push('sj-fac-u-' + c); });
+    var base = ['sj-fac-solid'], ids = [];
+    ['h0', 'h1', 'h2', 'h3', 'h4'].forEach(function (c) { base.push('sj-fac-' + c); });
+    (SJ.useCategories || []).forEach(function (c) { base.push('sj-fac-u-' + c); });
+    base.forEach(function (b) { Object.keys(ZBANDS).forEach(function (z) { ids.push(b + '-z' + z); }); });
     return ids;
   }
 

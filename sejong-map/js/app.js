@@ -109,6 +109,7 @@
       attributionControl: false,
       localIdeographFontFamily: C.localIdeographFontFamily,
       fadeDuration: 200,
+      canvasContextAttributes: { antialias: true }, // 건물 모서리 계단 현상 완화
       // 내장 컨트롤 툴팁 한국어화
       locale: {
         'NavigationControl.ZoomIn': '확대', 'NavigationControl.ZoomOut': '축소', 'NavigationControl.ResetBearing': '북쪽으로 초기화 (드래그하여 기울이기)',
@@ -129,6 +130,25 @@
   map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
   map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true, showZoom: true }), 'top-right');
+  // 회전·기울기 버튼 (마우스 우클릭 드래그를 모르는 경우를 위해)
+  map.addControl({
+    onAdd: function (m) {
+      var el = document.createElement('div');
+      el.className = 'maplibregl-ctrl maplibregl-ctrl-group sj-rot';
+      [['↺', '왼쪽으로 회전', function () { m.easeTo({ bearing: m.getBearing() - 30, duration: 400 }); }],
+        ['↻', '오른쪽으로 회전', function () { m.easeTo({ bearing: m.getBearing() + 30, duration: 400 }); }],
+        ['⤒', '더 기울이기', function () { m.easeTo({ pitch: Math.min(85, m.getPitch() + 15), duration: 400 }); }],
+        ['⤓', '덜 기울이기', function () { m.easeTo({ pitch: Math.max(0, m.getPitch() - 15), duration: 400 }); }],
+      ].forEach(function (d) {
+        var bt = document.createElement('button');
+        bt.type = 'button'; bt.textContent = d[0]; bt.title = d[1]; bt.setAttribute('aria-label', d[1]);
+        bt.addEventListener('click', d[2]);
+        el.appendChild(bt);
+      });
+      this._el = el; return el;
+    },
+    onRemove: function () { if (this._el) this._el.remove(); },
+  }, 'top-right');
   map.addControl(new maplibregl.FullscreenControl(), 'top-right');
   map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false, showAccuracyCircle: true }), 'top-right');
   map.on('styleimagemissing', function (e) {
@@ -214,14 +234,15 @@
     var p = f.properties || {};
     var h = p.render_height != null ? +p.render_height : null;
     var b = +(p.render_min_height || 0);
+    var noData = h === C.tileDefaultHeight && !b; // 타일 기본값 = OSM 에 높이·층수가 없는 건물
     var area = SJ.geo.polygonArea(f.geometry);
     var hn = nearby(e.point, ['label-housenumber'], 30)[0];
     var poi = nearby(e.point, ['label-poi'], 24)[0];
     var title = poi ? nameOf(poi.properties) : '건물';
     var rows = [
-      ['높이', h != null ? h.toFixed(h < 10 ? 1 : 0) + ' m' : '정보 없음'],
+      ['높이', noData ? '정보 없음 (기본값 ' + h + ' m 로 표시)' : h != null ? h.toFixed(h < 10 ? 1 : 0) + ' m' : '정보 없음'],
       ['시작 높이', b ? b.toFixed(1) + ' m' : ''],
-      ['추정 층수', h != null && h - b > 2 ? '약 ' + Math.max(1, Math.round((h - b) / C.storeyHeight)) + '층' : ''],
+      ['추정 층수', !noData && h != null && h - b > 2 ? '약 ' + Math.max(1, Math.round((h - b) / C.storeyHeight)) + '층' : ''],
       ['바닥 면적', area > 1 ? '약 ' + U.fmtArea(area) : ''],
       ['번지', hn ? hn.properties.housenumber : ''],
       ['색상(OSM)', p.colour || ''],
@@ -229,7 +250,7 @@
     ];
     return '<h3>' + esc(title) + '</h3>' + (poi ? '<p class="pp-type">건물 · ' + esc(ko(poi.properties.subclass || poi.properties.class)) + '</p>' : '') +
       dl(rows) + osmLinkAt(e.lngLat) +
-      '<p class="pp-note">층수는 높이 ÷ ' + C.storeyHeight + ' m 로 추정한 값입니다. 면적은 화면에 보이는 타일 범위 기준입니다.</p>';
+      '<p class="pp-note">' + (noData ? 'OSM 에 이 건물의 높이·층수 정보가 없어 실제보다 낮게 그려질 수 있습니다. ' : '층수는 높이 ÷ ' + C.storeyHeight + ' m 로 추정한 값입니다. ') + '면적은 화면에 보이는 타일 범위 기준입니다.</p>';
   }
   function safeUrl(u) {
     u = String(u || '').trim();

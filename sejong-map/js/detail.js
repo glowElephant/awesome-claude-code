@@ -384,21 +384,21 @@
       var plain = { id: 'dt-bld-3d', type: 'fill-extrusion', minzoom: 15, filter: isB,
         layout: { visibility: b3 ? 'visible' : 'none' },
         paint: { 'fill-extrusion-color': col, 'fill-extrusion-height': ['get', 'h'], 'fill-extrusion-base': ['get', 'b'],
-          'fill-extrusion-opacity': 0.95, 'fill-extrusion-vertical-gradient': true } };
+          'fill-extrusion-opacity': 1, 'fill-extrusion-vertical-gradient': true } };
       plain.maxzoom = fac ? SJ.FACADE_Z : 24;
       return [
         plain,
         { id: 'dt-bld-facade', type: 'fill-extrusion', minzoom: SJ.FACADE_Z, filter: isB,
           layout: { visibility: b3 && fac ? 'visible' : 'none' },
           paint: { 'fill-extrusion-pattern': SJ.facadePattern(S, ['get', 'h'], true), 'fill-extrusion-height': ['get', 'h'],
-            'fill-extrusion-base': ['get', 'b'], 'fill-extrusion-opacity': 0.95 } },
+            'fill-extrusion-base': ['get', 'b'], 'fill-extrusion-opacity': 1 } },
         { id: 'dt-bld-cap', type: 'fill-extrusion', minzoom: SJ.FACADE_Z, filter: isB,
           layout: { visibility: b3 && fac ? 'visible' : 'none' },
-          paint: { 'fill-extrusion-color': col, 'fill-extrusion-height': ['+', ['get', 'h'], 0.4], 'fill-extrusion-base': ['get', 'h'], 'fill-extrusion-opacity': 0.95 } },
+          paint: { 'fill-extrusion-color': col, 'fill-extrusion-height': ['+', ['get', 'h'], 0.4], 'fill-extrusion-base': ['get', 'h'], 'fill-extrusion-opacity': 1 } },
         { id: 'dt-roof', type: 'fill-extrusion', minzoom: 15, filter: ['==', ['get', 'kind'], 'roof'],
           layout: { visibility: b3 ? 'visible' : 'none' },
           paint: { 'fill-extrusion-color': ['case', ['!=', ['coalesce', ['get', 'roofColour'], ''], ''], ['to-color', ['get', 'roofColour'], P.roof], P.roof],
-            'fill-extrusion-height': ['get', 'h'], 'fill-extrusion-base': ['get', 'b'], 'fill-extrusion-opacity': 0.97 } },
+            'fill-extrusion-height': ['get', 'h'], 'fill-extrusion-base': ['get', 'b'], 'fill-extrusion-opacity': 1 } },
         { id: 'dt-crossing', type: 'symbol', minzoom: 17, filter: ['==', ['get', 'kind'], 'crossing'],
           layout: { 'icon-image': 'sj-crossing', 'icon-size': zl([[17, 0.6], [19, 1]]), 'icon-allow-overlap': true, 'icon-rotation-alignment': 'map', 'icon-pitch-alignment': 'map' } },
         { id: 'dt-entrance', type: 'symbol', minzoom: 17.5, filter: ['==', ['get', 'kind'], 'entrance'],

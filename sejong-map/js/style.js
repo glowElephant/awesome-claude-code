@@ -209,15 +209,21 @@
   }
   // 외벽 무늬를 쓸 수 있는지 (OSM 색 모드는 건물마다 색이 달라 무늬 이미지로 표현 불가 → 단색 유지)
   SJ.facadeOn = function (S) { return !!S.facade && S.colorMode !== 'osm'; };
+  // 확대 단계(16~19)마다 칸 수가 다른 무늬 이미지를 골라, 창 한 줄이 항상 1개 층 높이가 되게 합니다.
+  function byZoom(base) {
+    var e = ['step', ['zoom'], ['concat', base, '-z16']];
+    [17, 18, 19].forEach(function (z) { e.push(z, ['concat', base, '-z' + z]); });
+    return e;
+  }
   SJ.facadePattern = function (S, hExpr, isDetail) {
-    if (S.colorMode === 'height') return heightStep(hExpr, 'sj-fac-');
+    if (S.colorMode === 'height') return byZoom(heightStep(hExpr, 'sj-fac-'));
     if (S.colorMode === 'use' && isDetail) {
       var m = ['match', ['get', 'cat']];
       SJ.useCategories.slice(0, -1).forEach(function (c) { m.push(c, 'sj-fac-u-' + c); });
       m.push('sj-fac-u-oth');
-      return m;
+      return byZoom(m);
     }
-    return 'sj-fac-solid';
+    return byZoom('sj-fac-solid');
   };
   SJ.detailColor = function (P, S) {
     var h = ['get', 'h'];
@@ -469,7 +475,7 @@
         'fill-extrusion-color': bcol,
         'fill-extrusion-height': zl([[13, 0], [13.6, SJ.heightExpr]]),
         'fill-extrusion-base': zl([[13, 0], [13.6, SJ.baseExpr]]),
-        'fill-extrusion-opacity': 0.93,
+        'fill-extrusion-opacity': 1,
         'fill-extrusion-vertical-gradient': true,
       } };
     b3d.maxzoom = fac ? SJ.FACADE_Z : 24; // 명시해야 테마/모드 전환(diff) 때 확대 범위가 갱신됨
@@ -482,7 +488,7 @@
         'fill-extrusion-pattern': SJ.facadePattern(S, SJ.heightExpr, false),
         'fill-extrusion-height': SJ.heightExpr,
         'fill-extrusion-base': SJ.baseExpr,
-        'fill-extrusion-opacity': 0.95,
+        'fill-extrusion-opacity': 1,
       } });
     add({ id: 'building-roof', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building', minzoom: SJ.FACADE_Z,
       filter: tf,
@@ -491,7 +497,7 @@
         'fill-extrusion-color': bcol,
         'fill-extrusion-height': ['+', SJ.heightExpr, 0.4],
         'fill-extrusion-base': SJ.heightExpr,
-        'fill-extrusion-opacity': 0.95,
+        'fill-extrusion-opacity': 1,
       } });
 
     // ── 라벨 ──

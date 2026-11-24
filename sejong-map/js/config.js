@@ -79,6 +79,7 @@
     // 건물 높이가 없을 때 쓰는 기본값(m)
     defaultBuildingHeight: 6,
     // 층수 추정에 쓰는 층고(m) — 팝업에 '추정'으로 표시
-    storeyHeight: 3.2,
+    storeyHeight: 3.66, // OpenMapTiles 가 층수→높이로 바꿀 때 쓰는 값과 동일
+    tileDefaultHeight: 5, // OpenMapTiles 가 높이·층수 없는 건물에 넣는 기본 높이(m)
   };
 })();
